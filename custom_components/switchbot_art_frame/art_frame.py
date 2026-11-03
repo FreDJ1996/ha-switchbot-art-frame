@@ -10,6 +10,8 @@ import asyncio
 import time
 from typing import TYPE_CHECKING, Any
 
+from bleak.exc import BleakError
+from switchbot import SwitchbotOperationError
 from switchbot.devices.art_frame import COMMAND_SET_IMAGE
 
 from .const import (
@@ -30,6 +32,8 @@ from .const import (
 
 POLL_INTERVAL = 1.0  # seconds between progress polls, as the app does
 DOWNLOAD_TIMEOUT = 120.0  # the app's download took about 25 s
+DOWNLOAD_ATTEMPTS = 2  # retry a quick failure once; never retry a timeout
+RETRY_DELAY = 5.0  # seconds to let the frame's Wi-Fi and Bluetooth settle
 
 if TYPE_CHECKING:
     from switchbot import SwitchbotArtFrame
@@ -37,6 +41,10 @@ if TYPE_CHECKING:
 
 class ArtFrameError(Exception):
     """The frame did not do what was asked."""
+
+
+class DownloadTimeoutError(ArtFrameError):
+    """The frame was still downloading when we gave up (not retried)."""
 
 
 class ImageSelectionError(ValueError):
@@ -138,6 +146,9 @@ async def async_download_image(
     own Wi-Fi. The image must already be in SwitchBot's cloud, and image_id
     must be the ID the cloud assigned it: the frame asks the cloud for that
     ID, and any other fails (download state 3).
+
+    A quick failure (a refused command, a failed download, a Bluetooth error)
+    is retried once. A timeout isn't: the frame may still be downloading.
     """
     image_ids, _ = await async_refresh(device)
     if len(image_ids) >= MAX_LOCAL_IMAGES:
@@ -149,29 +160,22 @@ async def async_download_image(
     elif not 1 <= image_id <= 255:
         raise ImageSelectionError("Image ID must be between 1 and 255")
 
-    await _send(device, COMMAND_START_WIFI, "connect to Wi-Fi")
-    reply = await _send(
-        device, COMMAND_DOWNLOAD_IMAGE.format(image_id), "start the download"
-    )
-
     progress: list[int] = []
-    status = b""
-    deadline = time.monotonic() + DOWNLOAD_TIMEOUT
-    while True:
-        await asyncio.sleep(POLL_INTERVAL)
-        status = (await _send(device, COMMAND_DOWNLOAD_STATUS, "report progress"))[1:]
-        if len(status) <= STATUS_PERCENT:
-            raise ArtFrameError(f"Unexpected progress reply {status.hex()}")
-        state = status[STATUS_STATE]
-        if state == 2 and image_id in status[STATUS_IDS]:
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            progress = await _async_fetch(device, image_id)
             break
-        if not progress or progress[-1] != status[STATUS_PERCENT]:
-            progress.append(status[STATUS_PERCENT])
-        if state not in (1, 2) or time.monotonic() > deadline:
-            raise ArtFrameError(
-                f"Download did not finish (state {state}, last reply "
-                f"{status.hex()}, start reply {reply.hex()})"
-            )
+        except DownloadTimeoutError:
+            raise
+        except (ArtFrameError, SwitchbotOperationError, BleakError):
+            if attempt == DOWNLOAD_ATTEMPTS:
+                raise
+        await asyncio.sleep(RETRY_DELAY)
+        # The frame may have finished after all
+        # (Bluetooth dropped after the download completed?)
+        image_ids, _ = await async_refresh(device)
+        if image_id in image_ids:
+            break
 
     if show:
         await _send(device, COMMAND_SET_IMAGE.format(f"{image_id:02X}"), "show it")
@@ -183,3 +187,34 @@ async def async_download_image(
         "current_image_id": current,
         "progress": progress,
     }
+
+
+async def _async_fetch(device: SwitchbotArtFrame, image_id: int) -> list[int]:
+    """Make one download attempt; return the progress percentages reported."""
+    await _send(device, COMMAND_START_WIFI, "connect to Wi-Fi")
+    reply = await _send(
+        device, COMMAND_DOWNLOAD_IMAGE.format(image_id), "start the download"
+    )
+
+    progress: list[int] = []
+    deadline = time.monotonic() + DOWNLOAD_TIMEOUT
+    while True:
+        await asyncio.sleep(POLL_INTERVAL)
+        status = (await _send(device, COMMAND_DOWNLOAD_STATUS, "report progress"))[1:]
+        if len(status) <= STATUS_PERCENT:
+            raise ArtFrameError(f"Unexpected progress reply {status.hex()}")
+        state = status[STATUS_STATE]
+        if state == 2 and image_id in status[STATUS_IDS]:
+            return progress
+        if not progress or progress[-1] != status[STATUS_PERCENT]:
+            progress.append(status[STATUS_PERCENT])
+        if state not in (1, 2):
+            raise ArtFrameError(
+                f"Download failed (state {state}, last reply {status.hex()}, "
+                f"start reply {reply.hex()})"
+            )
+        if time.monotonic() > deadline:
+            raise DownloadTimeoutError(
+                f"Download did not finish (state {state}, last reply "
+                f"{status.hex()}, start reply {reply.hex()})"
+            )

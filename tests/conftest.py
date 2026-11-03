@@ -39,6 +39,9 @@ def fast_polling(monkeypatch):
     monkeypatch.setattr(
         "custom_components.switchbot_art_frame.art_frame.DOWNLOAD_TIMEOUT", 0.2
     )
+    monkeypatch.setattr(
+        "custom_components.switchbot_art_frame.art_frame.RETRY_DELAY", 0
+    )
 
 
 @dataclass
@@ -55,13 +58,20 @@ class FrameSimulator:
     download_steps: list[int] | None = field(
         default_factory=lambda: [100, 0, 25, 50, 75]
     )
+    # How many downloads fail (state 3) before one succeeds.
+    download_failures: int = 0
     _downloading: int | None = None
+    _failing: bool = False
     _steps_left: list[int] = field(default_factory=list)
 
     def _download_status(self) -> bytes:
         ids = self.image_ids
         if self._downloading is None:
             state, pct, code = 0, 100, 0x1E
+        elif self._failing:
+            self._downloading = None
+            self._failing = False
+            state, pct, code = 3, 0, 0x0A
         elif self._steps_left:
             state, pct, code = 1, self._steps_left.pop(0), 0x0A
         elif self.download_steps is None:
@@ -99,6 +109,9 @@ class FrameSimulator:
         if key.startswith("570F7A0101"):  # download
             self._downloading = int(key[10:12], 16)
             self._steps_left = list(self.download_steps or [])
+            if self.download_failures:
+                self.download_failures -= 1
+                self._failing = True
             return b"\x01" + bytes([self._downloading, 0x1E])
         if key == "570F7B00":  # download progress
             return self._download_status()

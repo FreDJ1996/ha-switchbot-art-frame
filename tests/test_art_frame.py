@@ -4,6 +4,7 @@ import pytest
 
 from custom_components.switchbot_art_frame.art_frame import (
     ArtFrameError,
+    DownloadTimeoutError,
     ImageSelectionError,
     async_delete_image,
     async_download_image,
@@ -100,10 +101,48 @@ async def test_download_id_in_use(frame, art_frame_device) -> None:
 
 
 async def test_download_never_finishes(frame, art_frame_device) -> None:
+    """A timeout isn't retried: the frame may still be downloading."""
     frame.image_ids.pop()
     frame.download_steps = None
-    with pytest.raises(ArtFrameError, match="did not finish"):
+    with pytest.raises(DownloadTimeoutError, match="did not finish"):
         await async_download_image(art_frame_device, 0x1A)
+    assert frame.sent.count("570F7A01011A") == 1
+
+
+async def test_download_retries_once(frame, art_frame_device) -> None:
+    frame.image_ids.pop()
+    frame.download_failures = 1
+    result = await async_download_image(art_frame_device, 0x1A)
+    assert result["image_id"] == 0x1A
+    assert result["current_image_id"] == 0x1A
+    assert frame.sent.count("570F7A01011A") == 2
+
+
+async def test_download_fails_twice(frame, art_frame_device) -> None:
+    frame.image_ids.pop()
+    frame.download_failures = 2
+    with pytest.raises(ArtFrameError, match="Download failed"):
+        await async_download_image(art_frame_device, 0x1A)
+    assert frame.sent.count("570F7A01011A") == 2
+    assert 0x1A not in frame.image_ids
+
+
+async def test_download_late_success_not_retried(frame, art_frame_device) -> None:
+    """If the frame got the image despite an error, don't download it again."""
+    frame.image_ids.pop()
+    send = art_frame_device._send_command  # noqa: SLF001
+
+    async def lose_progress_reply(key, retry=None):
+        if key.upper() == "570F7B00":
+            frame.image_ids.append(0x1A)  # the frame finishes regardless
+            return b"\x05"
+        return await send(key, retry)
+
+    art_frame_device._send_command = lose_progress_reply  # noqa: SLF001
+    result = await async_download_image(art_frame_device, 0x1A)
+    assert result["image_id"] == 0x1A
+    assert result["current_image_id"] == 0x1A
+    assert frame.sent.count("570F7A01011A") == 1
 
 
 @pytest.mark.parametrize(("target", "expected"), [("oldest", 0x10), ("newest", 0x19)])

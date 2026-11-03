@@ -115,7 +115,7 @@
         },
         "make_room": {
           "name": "Make room",
-          "description": "If the frame already holds 10 images, delete the oldest first."
+          "description": "If the frame or its cloud album is full, remove the oldest never-downloaded upload or delete the oldest image first."
         }
       }
     }

@@ -115,7 +115,61 @@ async def test_cloud_leftovers_removed_pending_kept(frame, art_frame_device) -> 
         art_frame_device, account, upload, "https://x/a.jpg"
     )
     assert result["removed_cloud_leftovers"] == [0x1F]
+    assert result["removed_pending_uploads"] == []
     assert any(r["imageIndex"] == 0x1E for r in account.records)
+
+
+async def test_pending_upload_frees_room(frame, art_frame_device) -> None:
+    """9 on the frame + 1 never downloaded fills the cloud's 10 slots."""
+    frame.image_ids = frame.image_ids[:9]
+    records = records_for(frame.image_ids)
+    records.append({"id": 90002, "status": 0, "imageIndex": 0x1E})
+    account = FakeAccount(frame, records)
+
+    async def upload(url):
+        assert not any(r["imageIndex"] == 0x1E for r in account.records)
+        account.add_upload(0x1A)
+
+    result = await async_show_image(
+        art_frame_device, account, upload, "https://x/a.jpg"
+    )
+    assert result["removed_pending_uploads"] == [0x1E]
+    assert result["deleted_image_id"] is None
+    assert result["image_id"] == 0x1A
+    assert len(frame.image_ids) == 10
+
+
+async def test_pending_oldest_removed_first(frame, art_frame_device) -> None:
+    frame.image_ids = frame.image_ids[:8]
+    records = records_for(frame.image_ids)
+    records.append({"id": 90001, "status": 0, "imageIndex": 0x1D})  # older
+    records.append({"id": 90002, "status": 0, "imageIndex": 0x1E})
+    account = FakeAccount(frame, records)
+
+    async def upload(url):
+        account.add_upload(0x1A)
+
+    result = await async_show_image(
+        art_frame_device, account, upload, "https://x/a.jpg"
+    )
+    assert result["removed_pending_uploads"] == [0x1D]
+    assert any(r["imageIndex"] == 0x1E for r in account.records)
+
+
+async def test_pending_full_without_make_room(frame, art_frame_device) -> None:
+    frame.image_ids = frame.image_ids[:9]
+    records = records_for(frame.image_ids)
+    records.append({"id": 90002, "status": 0, "imageIndex": 0x1E})
+    account = FakeAccount(frame, records)
+
+    async def upload(url):
+        raise AssertionError("should not upload")
+
+    with pytest.raises(ImageSelectionError, match="waiting to download"):
+        await async_show_image(
+            art_frame_device, account, upload, "https://x/a.jpg", make_room=False
+        )
+    assert account.deleted == []
 
 
 async def test_upload_never_appears(frame, art_frame_device) -> None:

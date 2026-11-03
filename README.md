@@ -149,7 +149,9 @@ Fields (give exactly one of the first three):
   `allowlist_external_dirs`);
 - `image_data`: a PNG or JPEG, base64-encoded or as a `data:` URI;
 - `make_room` (default `true`): if the frame is full, delete its oldest image
-  first. With `false`, the action fails instead.
+  first, and if SwitchBot's cloud album is full of uploads the frame never
+  downloaded, remove the oldest of them. With `false`, the action fails
+  instead.
 
 Files and data are sent to SwitchBot inline, so no public URL is needed.
 SwitchBot rejects uploads larger than about 1 MiB, so a file or data must be
@@ -161,13 +163,17 @@ The action:
 1. removes entries from the frame's cloud album for images no longer on the
    frame (left over from deletes made outside the SwitchBot app), so they
    don't count against the cloud's 10-image limit;
-2. if the frame is full and `make_room` is `true`, deletes the oldest image,
-   on the frame and in the cloud;
+2. if `make_room` is `true`, makes room: if uploads the frame never
+   downloaded (left by an earlier `show_image` whose download failed, or by
+   `upload_image`) would fill the cloud's 10 slots, removes the oldest of
+   them, and if the frame is full, deletes its oldest image, on the frame and
+   in the cloud;
 3. uploads the image through the SwitchBot Cloud integration (the same call
    `switchbot_cloud.upload_art_frame_image` makes);
 4. finds the ID SwitchBot assigned to the new image in the cloud album;
 5. tells the frame over Bluetooth to download that image, which it fetches
-   over its own Wi-Fi (about 25 seconds), and shows it.
+   over its own Wi-Fi (about 25 seconds), and shows it. A download that fails
+   quickly is retried once, as for `download_image`.
 
 Response:
 
@@ -177,7 +183,9 @@ Response:
 - `progress`: the download percentages the frame reported;
 - `deleted_image_id`: the image deleted to make room, or `null`;
 - `removed_cloud_leftovers`: the IDs of the cloud album entries removed in
-  step 1.
+  step 1;
+- `removed_pending_uploads`: the IDs of the never-downloaded uploads removed
+  in step 2.
 
 ```yaml
 action: switchbot_art_frame.show_image
@@ -261,6 +269,11 @@ Fields:
 - `show` (default `true`): show the image once it has downloaded.
 
 The frame must have a free slot, and the ID must not already be on it.
+
+If the download fails quickly (the frame refuses a command, reports a failed
+download, or the Bluetooth connection drops), it is retried once after a few
+seconds. A download still running after 2 minutes isn't retried: the frame may
+yet finish it.
 
 Response: `image_id`, `image_ids`, `current_image_id` and `progress`, as for
 `show_image`.
