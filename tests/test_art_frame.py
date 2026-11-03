@@ -64,6 +64,18 @@ async def test_delete_refused(frame, art_frame_device) -> None:
     assert 0x10 in frame.image_ids
 
 
+@pytest.mark.parametrize("code", [0x06, 0x0E])
+async def test_other_success_codes(frame, art_frame_device, code) -> None:
+    """The app also treats 06 and 0E as success (06: battery low)."""
+    frame.reply_code = code
+    deleted = await async_delete_image(art_frame_device, "current")
+    assert deleted["switched_to_image_id"] == 0x10
+    assert 0x19 not in frame.image_ids
+    result = await async_download_image(art_frame_device, 0x1A)
+    assert result["current_image_id"] == 0x1A
+    assert frame.sent.count("570F7A01011A") == 1  # no retry
+
+
 async def test_download_sequence(frame, art_frame_device) -> None:
     """Same commands, in the same order, as the app's Sync."""
     frame.image_ids = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15]
@@ -135,7 +147,7 @@ async def test_download_late_success_not_retried(frame, art_frame_device) -> Non
     async def lose_progress_reply(key, retry=None):
         if key.upper() == "570F7B00":
             frame.image_ids.append(0x1A)  # the frame finishes regardless
-            return b"\x05"
+            return b"\x00"
         return await send(key, retry)
 
     art_frame_device._send_command = lose_progress_reply  # noqa: SLF001

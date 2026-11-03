@@ -52,7 +52,11 @@ class FrameSimulator:
     current: int = 0x19
     battery: int = 42
     sent: list[str] = field(default_factory=list)
+    # Commands starting with these prefixes are refused with 00, an arbitrary
+    # failure byte: no SwitchBot code treats it as success.
     refuse: set[str] = field(default_factory=set)
+    # First byte of successful replies. The app also accepts 06 and 0E.
+    reply_code: int = 0x01
     # Download: progress readings returned by successive status polls before
     # the download finishes; None means the download never finishes.
     download_steps: list[int] | None = field(
@@ -90,7 +94,11 @@ class FrameSimulator:
         key = key.upper()
         self.sent.append(key)
         if any(key.startswith(prefix) for prefix in self.refuse):
-            return b"\x05"
+            return b"\x00"
+        reply = self._answer(key)
+        return bytes([self.reply_code]) + reply[1:]
+
+    def _answer(self, key: str) -> bytes:
         if key == "5702":  # basic info
             ids = self.image_ids
             payload = bytes(

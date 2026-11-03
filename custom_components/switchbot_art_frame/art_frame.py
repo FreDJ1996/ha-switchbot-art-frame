@@ -7,6 +7,7 @@ moved into PySwitchbot later.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -29,6 +30,13 @@ from .const import (
     STATUS_PERCENT,
     STATUS_STATE,
 )
+
+_LOGGER = logging.getLogger(__name__)
+
+# First bytes of a reply that mean success. The SwitchBot app accepts all
+# three (isBleDataSuccess); PySwitchbot's lock documents 06 as "success, but
+# the battery is low". The meaning of 0E isn't known.
+SUCCESS_CODES = frozenset({0x01, 0x06, 0x0E})
 
 POLL_INTERVAL = 1.0  # seconds between progress polls, as the app does
 DOWNLOAD_TIMEOUT = 120.0  # the app's download took about 25 s
@@ -101,19 +109,15 @@ async def async_delete_image(
     switched_to: int | None = None
     if image_id == current and len(image_ids) > 1:
         switched_to = image_ids[(image_ids.index(image_id) + 1) % len(image_ids)]
-        result = await device._send_command(  # noqa: SLF001
-            COMMAND_SET_IMAGE.format(f"{switched_to:02X}")
+        await _send(
+            device,
+            COMMAND_SET_IMAGE.format(f"{switched_to:02X}"),
+            f"switch to image {switched_to} before deleting",
         )
-        if not device._check_command_result(result, 0, {1}):  # noqa: SLF001
-            raise ArtFrameError(
-                f"Frame refused to switch to image {switched_to} before deleting"
-            )
 
-    result = await device._send_command(  # noqa: SLF001
-        COMMAND_DELETE_IMAGE.format(image_id)
+    await _send(
+        device, COMMAND_DELETE_IMAGE.format(image_id), f"delete image {image_id}"
     )
-    if not device._check_command_result(result, 0, {1}):  # noqa: SLF001
-        raise ArtFrameError(f"Frame refused to delete image {image_id}")
 
     remaining, _ = await async_refresh(device)
     if image_id in remaining:
@@ -129,11 +133,14 @@ async def async_delete_image(
 
 
 async def _send(device: SwitchbotArtFrame, key: str, what: str) -> bytes:
+    """Send a command; raise ArtFrameError unless the frame reports success."""
     result = await device._send_command(key)  # noqa: SLF001
-    if not device._check_command_result(result, 0, {1}):  # noqa: SLF001
+    if not device._check_command_result(result, 0, SUCCESS_CODES):  # noqa: SLF001
         raise ArtFrameError(
             f"Frame refused to {what} (reply {result.hex() if result else None})"
         )
+    if result[0] != 0x01:
+        _LOGGER.debug("Frame replied %02x (success) to %s: %s", result[0], what, key)
     return result
 
 
