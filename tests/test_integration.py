@@ -1,5 +1,6 @@
 """Tests for the config flow, sensor and delete_image action in Home Assistant."""
 
+import asyncio
 from unittest.mock import patch
 
 import pytest
@@ -688,3 +689,77 @@ async def test_show_image_two_sources_rejected(hass: HomeAssistant, cloud_flow) 
             },
             blocking=True,
         )
+
+
+async def test_show_image_calls_run_one_at_a_time(
+    hass: HomeAssistant, setup_entry, frame, monkeypatch
+) -> None:
+    """A second show_image waits until the first has finished.
+
+    HA runs entity actions under the platform's PARALLEL_UPDATES semaphore
+    (1 in sensor.py). If they overlapped, the second call would see the
+    first's upload as pending, remove it to make room, and the first would
+    fail.
+    """
+    monkeypatch.setattr(
+        "custom_components.switchbot_art_frame.workflow.LIST_POLL_INTERVAL", 0
+    )
+    entity = _sensor_entity(hass)
+    frame.image_ids.pop()  # 9 on the frame
+    records = [
+        {"id": n, "status": 1, "imageIndex": i} for n, i in enumerate(frame.image_ids)
+    ]
+    uploads: list[str] = []
+    gate = asyncio.Event()
+
+    class Account:
+        async def async_list_images(self):
+            return sorted(records, key=lambda r: r["id"], reverse=True)
+
+        async def async_delete_images(self, ids):
+            records[:] = [r for r in records if r["imageIndex"] not in ids]
+
+    async def upload(parameter):
+        uploads.append(parameter["imageUrl"])
+        records.append(
+            {"id": 100 + len(uploads), "status": 0, "imageIndex": 0x19 + len(uploads)}
+        )
+        if len(uploads) == 1:
+            await gate.wait()  # hold the first call with its upload pending
+
+    entity._account = Account()  # noqa: SLF001
+    entity._async_cloud_upload = upload  # noqa: SLF001
+
+    def show(url: str):
+        return hass.async_create_task(
+            hass.services.async_call(
+                DOMAIN,
+                "show_image",
+                {"entity_id": ENTITY_ID, "image_url": url},
+                blocking=True,
+                return_response=True,
+            )
+        )
+
+    first = show("https://example.com/1.png")
+    for _ in range(50):  # until the first call is held in its upload
+        if uploads:
+            break
+        await asyncio.sleep(0)
+    assert uploads == ["https://example.com/1.png"]
+
+    sent = len(frame.sent)
+    second = show("https://example.com/2.png")
+    for _ in range(50):
+        await asyncio.sleep(0)
+    assert len(uploads) == 1  # the second call is waiting...
+    assert len(frame.sent) == sent  # ...and hasn't touched the frame
+
+    gate.set()
+    one = (await first)[ENTITY_ID]
+    two = (await second)[ENTITY_ID]
+    assert one["image_id"] == 0x1A
+    assert two["image_id"] == 0x1B
+    assert two["removed_pending_uploads"] == []  # left the first's upload alone
+    assert two["deleted_image_id"] == 0x10  # frame was full: oldest made room
+    assert {0x1A, 0x1B} <= set(frame.image_ids)
