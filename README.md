@@ -26,10 +26,11 @@ The first-generation SwitchBot AI Art Frame, which comes in three sizes:
 | 7.3"  |  800×480   | Untested; the actions should work, but see below      |
 | 31.5" | 2560×1440  | Untested; the actions should work, but see below      |
 
-The dashboard card and the examples in this README size images for the 13.3"
-frame (1200×1600). On the other sizes, scale images to that frame's
-resolution yourself; how a frame shows an image of the wrong size hasn't been
-tested, so the card may not give good results.
+The examples in this README size images for the 13.3" frame (1200×1600). On
+the other sizes, scale images to that frame's resolution yourself; how a frame
+shows an image of the wrong size hasn't been tested. The dashboard card sizes
+images for any of the three once its `size` option is set (see
+[Dashboard card](#dashboard-card)), though only the 13.3" has been tried.
 
 The **AI Art Frame 2** (released October 2026) is not supported and probably
 won't work. It may not be recognised by the core SwitchBot integration yet,
@@ -330,6 +331,9 @@ Options:
 
 - `entity` (required): the frame's Local images sensor;
 - `orientation`: `portrait` (default) or `landscape`;
+- `size`: the frame's screen size in inches, `13.3` (default, 1200×1600),
+  `7.3` (480×800) or `31.5` (1440×2560). The card can't detect it, so set it
+  for the smaller and larger frames;
 - `fit`: `fill` (default; crops the image to fill the frame) or `fit` (shows
   the whole image with white borders). This can also be switched on the card;
 - `title`: the card's heading (default "Art Frame").
@@ -337,9 +341,11 @@ Options:
 The card shows how many images the frame holds and, when it's full, notes that
 sending will replace the oldest. Choose a PNG or JPEG to open a preview at the
 frame's shape, then select **Show on frame**, or **Cancel** to close it. The
-card resizes the image in the browser to 1200×1600 (1600×1200 in landscape)
-and sends it as a PNG if that fits under the upload limit, or as a JPEG
-otherwise. Sending takes about a minute.
+card resizes the image in the browser to the frame's resolution (for the
+13.3" frame, 1200×1600, or 1600×1200 in landscape) and sends it as a PNG if
+that fits under the upload limit, or as a JPEG otherwise. On the 31.5" frame
+a detailed photo may need a fairly low JPEG quality to fit, and one that
+still doesn't fit is refused with an error. Sending takes about a minute.
 
 ## How it works
 

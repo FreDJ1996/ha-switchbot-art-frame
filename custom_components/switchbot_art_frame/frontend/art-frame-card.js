@@ -7,6 +7,7 @@
  *   type: custom:switchbot-art-frame-card
  *   entity: sensor.art_frame_eeff_local_images
  *   orientation: portrait   # or landscape
+ *   size: 13.3              # or 7.3 or 31.5 (inches)
  *
  * The image is fitted to the frame in the browser and sent to the
  * show_image action as base64 (image_data), so nothing is stored on HA.
@@ -14,8 +15,17 @@
 
 const CARD_TAG = "switchbot-art-frame-card";
 const MAX_IMAGES = 10;
-const LONG_SIDE = 1600;
-const SHORT_SIDE = 1200;
+// Screen resolution of each frame size (in inches), as [long side, short side].
+// The frame doesn't report its size in a form we can map yet, so it's set in
+// the card's config.
+const SIZES = {
+  "13.3": [1600, 1200],
+  "7.3": [800, 480],
+  "31.5": [2560, 1440],
+};
+const DEFAULT_SIZE = "13.3";
+// JPEG qualities to try, best first, when the PNG is too large to send.
+const JPEG_QUALITIES = [0.92, 0.85, 0.75, 0.65, 0.5, 0.4, 0.3];
 // SwitchBot's upload endpoint rejects large bodies (413). Its limit isn't
 // documented; the error comes from Fastify, whose default is 1 MiB, so stay
 // well under that.
@@ -33,7 +43,12 @@ class SwitchBotArtFrameCard extends HTMLElement {
 
   setConfig(config) {
     if (!config.entity) throw new Error("Set entity to the frame's Local images sensor");
-    this._config = { orientation: "portrait", fit: "fill", ...config };
+    // YAML reads `size: 13.3` as a number, so compare it as a string.
+    const size = String(config.size ?? DEFAULT_SIZE);
+    if (!Object.hasOwn(SIZES, size)) {
+      throw new Error(`size must be one of ${Object.keys(SIZES).join(", ")} (inches)`);
+    }
+    this._config = { orientation: "portrait", fit: "fill", ...config, size };
     this._fit = this._config.fit;
     this._busy = false;
     this._image = null;
@@ -51,9 +66,8 @@ class SwitchBotArtFrameCard extends HTMLElement {
   }
 
   get _size() {
-    return this._config.orientation === "landscape"
-      ? [LONG_SIDE, SHORT_SIDE]
-      : [SHORT_SIDE, LONG_SIDE];
+    const [long, short] = SIZES[this._config.size];
+    return this._config.orientation === "landscape" ? [long, short] : [short, long];
   }
 
   _render() {
@@ -242,13 +256,16 @@ class SwitchBotArtFrameCard extends HTMLElement {
 
   _encode(canvas) {
     // PNG keeps flat colours clean for the frame's dithering; fall back to
-    // JPEG for photos that would make the message too large.
+    // JPEG for photos that would make the message too large. The lowest
+    // qualities are only reached on the largest frames.
     let data = canvas.toDataURL("image/png");
-    for (const q of [0.92, 0.85, 0.75, 0.65, 0.5]) {
+    for (const q of JPEG_QUALITIES) {
       if (data.length <= MAX_DATA_CHARS) break;
       data = canvas.toDataURL("image/jpeg", q);
     }
-    if (data.length > MAX_DATA_CHARS) throw new Error("The image is too large to send");
+    if (data.length > MAX_DATA_CHARS) {
+      throw new Error("The image is too large to send, even as a low-quality JPEG");
+    }
     return data;
   }
 
