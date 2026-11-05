@@ -102,7 +102,7 @@ class SwitchBotArtFrameCard extends HTMLElement {
       </style>
       <ha-card>
         <div class="header">
-          <div class="title">${this._config.title ?? "Art Frame"}</div>
+          <div class="title"></div>
           <div class="count"></div>
         </div>
         <button class="pick" type="button" aria-label="Choose an image">${HINT}</button>
@@ -119,6 +119,8 @@ class SwitchBotArtFrameCard extends HTMLElement {
       </ha-card>`;
 
     const $ = (s) => this._root.querySelector(s);
+    // Config values are set as text so that values containing markup are not parsed as HTML.
+    $(".title").textContent = this._config.title ?? "Art Frame";
     this._els = {
       count: $(".count"),
       pick: $(".pick"),
