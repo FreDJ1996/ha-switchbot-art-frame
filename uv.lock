@@ -1148,7 +1148,7 @@ wheels = [
 
 [[package]]
 name = "ha-switchbot-art-frame"
-version = "0.6.1"
+version = "0.7.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
