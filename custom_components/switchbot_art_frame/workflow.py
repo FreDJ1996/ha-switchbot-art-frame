@@ -56,6 +56,7 @@ async def async_show_image(
     upload: Callable[[Any], Awaitable[Any]],
     image: Any,
     make_room: bool = True,
+    show: bool = True,
 ) -> dict[str, Any]:
     """Upload an image and put it on the frame. See the module docstring.
 
@@ -110,7 +111,7 @@ async def async_show_image(
                 "The upload was accepted but never appeared in the frame's cloud album"
             )
 
-    result = await async_download_image(device, int(new["imageIndex"]), show=True)
+    result = await async_download_image(device, int(new["imageIndex"]), show=show)
     return {
         **result,
         "deleted_image_id": deleted,

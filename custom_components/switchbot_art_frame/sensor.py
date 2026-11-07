@@ -268,6 +268,7 @@ class ArtFrameLocalImagesSensor(
         image_path: str | None = None,
         image_data: str | None = None,
         make_room: bool = True,
+        show: bool = True,
     ) -> ServiceResponse:
         """Handle the show_image action: the whole upload, no app."""
         if self._account is None:
@@ -290,6 +291,7 @@ class ArtFrameLocalImagesSensor(
                 self._async_cloud_upload,
                 parameter,
                 make_room,
+                show,
             )
         except ImageSelectionError as err:
             raise ServiceValidationError(str(err)) from err

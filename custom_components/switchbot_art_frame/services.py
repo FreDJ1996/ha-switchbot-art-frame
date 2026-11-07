@@ -71,6 +71,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
             vol.Exclusive(ATTR_IMAGE_PATH, "image"): cv.string,
             vol.Exclusive(ATTR_IMAGE_DATA, "image"): cv.string,
             vol.Optional(ATTR_MAKE_ROOM, default=True): cv.boolean,
+            vol.Optional(ATTR_SHOW, default=True): cv.boolean,
         },
         func="async_show_image",
         supports_response=SupportsResponse.OPTIONAL,

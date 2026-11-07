@@ -99,7 +99,7 @@
     },
     "show_image": {
       "name": "Show image",
-      "description": "Uploads an image to SwitchBot's cloud and has the frame fetch and display it, without the SwitchBot app. Give exactly one of an image URL, a file path or image data. Deletes the oldest image first if the frame is full. Needs a SwitchBot account added to this integration.",
+      "description": "Uploads an image to SwitchBot's cloud and has the frame fetch and (by default) display it, without the SwitchBot app. Give exactly one of an image URL, a file path or image data. Deletes the oldest image first if the frame is full. Needs a SwitchBot account added to this integration.",
       "fields": {
         "image_url": {
           "name": "Image URL",
@@ -116,6 +116,10 @@
         "make_room": {
           "name": "Make room",
           "description": "If the frame or its cloud album is full, remove the oldest never-downloaded upload or delete the oldest image first."
+        },
+        "show": {
+          "name": "Show",
+          "description": "Display the image once it has downloaded. Turn off to only store it on the frame, e.g. to fill it for the frame's own slideshow."
         }
       }
     }

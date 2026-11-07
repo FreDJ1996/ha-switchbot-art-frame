@@ -153,6 +153,9 @@ Fields (give exactly one of the first three):
   first, and if SwitchBot's cloud album is full of uploads the frame never
   downloaded, remove the oldest of them. With `false`, the action fails
   instead.
+- `show` (default `true`): display the image once it has downloaded. With
+  `false` it is only stored on the frame, for example to fill the frame for
+  its own slideshow without flipping through every new image.
 
 Files and data are sent to SwitchBot inline, so no public URL is needed.
 SwitchBot rejects uploads larger than about 1 MiB, so a file or data must be
@@ -173,7 +176,8 @@ The action:
    `switchbot_cloud.upload_art_frame_image` makes);
 4. finds the ID SwitchBot assigned to the new image in the cloud album;
 5. tells the frame over Bluetooth to download that image, which it fetches
-   over its own Wi-Fi (about 25 seconds), and shows it. A download that fails
+   over its own Wi-Fi (about 25 seconds), and shows it (unless `show` is
+   `false`). A download that fails
    quickly is retried once, as for `download_image`.
 
 Response:

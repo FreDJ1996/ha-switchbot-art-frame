@@ -72,6 +72,28 @@ async def test_full_flow_with_room(frame, art_frame_device) -> None:
     assert "570F7A01011A" in frame.sent
 
 
+async def test_show_false_stores_without_displaying(frame, art_frame_device) -> None:
+    """show=False fills the frame (e.g. for its own slideshow) without changing the display."""
+    frame.image_ids = frame.image_ids[:8]
+    shown_before = frame.current
+    account = FakeAccount(frame, records_for(frame.image_ids))
+
+    async def upload(url):
+        account.add_upload(0x1A)
+
+    result = await async_show_image(
+        art_frame_device,
+        account,
+        upload,
+        {"imageUrl": "https://example.com/a.jpg"},
+        show=False,
+    )
+    assert result["image_id"] == 0x1A
+    assert 0x1A in result["image_ids"]
+    assert frame.current == shown_before
+    assert not any(k.startswith("570F7A02") for k in frame.sent)
+
+
 async def test_full_frame_deletes_oldest_on_frame_and_cloud(
     frame, art_frame_device
 ) -> None:
